@@ -291,7 +291,8 @@ class MuseSparkRMSNorm(MuseGlimmerRMSNorm):
 
 class MuseSparkTextCenteredRMSNorm(MuseGlimmerTextCenteredRMSNorm):
     def forward(self, x):
-        output = self._norm(x.float())
+        output = x.float()
+        output = output * torch.rsqrt(output.pow(2).mean(-1, keepdim=True) + self.variance_epsilon)
         # (x * w).to(bfloat16) instead of x.to(bfloat16) * w
         # See https://github.com/huggingface/transformers/pull/29402
         output = output * (1.0 + self.weight).float()
@@ -302,7 +303,8 @@ class MuseSparkTextInputScaledRMSNorm(MuseGlimmerTextCenteredRMSNorm):
     def forward(self, x):
         # Different order from MuseSparkTextCenteredRMSNorm: first scale, then normalize.
         output = x.float() * (1.0 + self.weight).float()
-        output = self._norm(output.type_as(x).float())  # round with fp32->bf16->f32 before norm
+        output = output.type_as(x).float()  # round with fp32->bf16->f32 before norm
+        output = output * torch.rsqrt(output.pow(2).mean(-1, keepdim=True) + self.variance_epsilon)
         return output.type_as(x)
 
 

@@ -794,7 +794,10 @@ class Trainer:
             from accelerate.utils import TorchDynamoPlugin
 
             dynamo_plugin = TorchDynamoPlugin(
-                backend=self.args.torch_compile_backend, mode=self.args.torch_compile_mode
+                backend=self.args.torch_compile_backend,
+                mode=self.args.torch_compile_mode,
+                # The Neuron backend fails to compile graphs with dynamic shapes
+                dynamic=False if self.args.torch_compile_backend == "neuron" else None,
             )
             args["dynamo_plugin"] = dynamo_plugin
 
@@ -3051,10 +3054,12 @@ class Trainer:
         # To be JSON-serializable, we need to remove numpy types or zero-d tensors
         metrics = denumpify_detensorize(metrics)
 
-        if isinstance(all_losses, list) and all_losses:
-            metrics[f"{metric_key_prefix}_loss"] = np.concatenate(all_losses).mean().item()
-        elif isinstance(all_losses, np.ndarray):
-            metrics[f"{metric_key_prefix}_loss"] = all_losses.mean().item()
+        losses = np.concatenate(all_losses) if isinstance(all_losses, list) and all_losses else all_losses
+        if isinstance(losses, np.ndarray):
+            finite = np.isfinite(losses)
+            if self.args.logging_nan_inf_filter and finite.any():
+                losses = losses[finite]
+            metrics[f"{metric_key_prefix}_loss"] = losses.mean().item()
         if hasattr(self, "model_preparation_time"):
             metrics[f"{metric_key_prefix}_model_preparation_time"] = self.model_preparation_time
 
